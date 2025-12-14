@@ -1,0 +1,157 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pymannkendall as mk
+from fpdf import FPDF
+import io
+
+st.set_page_config(page_title="Climate Anomaly Dashboard", layout="wide")
+st.title("🌍 Climate Anomaly Dashboard")
+
+uploaded_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"])
+
+if uploaded_file:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file, parse_dates=["Date"])
+    else:
+        df = pd.read_excel(uploaded_file, parse_dates=["Date"])
+    df["Year"] = df["Date"].dt.year
+    df["Month"] = df["Date"].dt.month
+
+    # Year filter
+    min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
+    year_range = st.slider("📅 Select year range", min_value=min_year, max_value=max_year, value=(min_year, max_year))
+    df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
+
+    # Season filter
+    season_map = {
+        "Winter (Dec-Feb)": [12, 1, 2],
+        "Summer (Mar-May)": [3, 4, 5],
+        "Monsoon (Jun-Sep)": [6, 7, 8, 9],
+        "Post-Monsoon (Oct-Nov)": [10, 11]
+    }
+    season_choice = st.selectbox("🌦️ Select season (optional)", ["All"] + list(season_map.keys()))
+    if season_choice != "All":
+        df = df[df["Month"].isin(season_map[season_choice])]
+
+    # Panel 1: Time Series
+    st.header("📈 Panel 1: Time Series Plot")
+    selected_params = st.multiselect("Select variables to plot", df.columns[1:], default=df.columns[1])
+    if selected_params:
+        st.line_chart(df.set_index("Date")[selected_params])
+
+    # Panel 2: Boxplot
+    st.header("📊 Panel 2: Boxplot")
+    box_param = st.selectbox("Select variable for boxplot", df.columns[1:])
+    fig1, ax1 = plt.subplots()
+    sns.boxplot(y=df[box_param], ax=ax1)
+    ax1.set_title(f"Boxplot of {box_param}")
+    st.pyplot(fig1)
+
+    # Panel 3: Histogram
+    st.header("📉 Panel 3: Histogram")
+    hist_param = st.selectbox("Select variable for histogram", df.columns[1:], key="hist")
+    fig2, ax2 = plt.subplots()
+    ax2.hist(df[hist_param].dropna(), bins=20, color="skyblue", edgecolor="black")
+    ax2.set_title(f"Histogram of {hist_param}")
+    st.pyplot(fig2)
+
+    # Panel 4: Correlation Heatmap
+    st.header("🧊 Panel 4: Correlation Heatmap")
+    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    sns.heatmap(df.select_dtypes(include=[np.number]).corr(), annot=True, cmap="coolwarm", ax=ax3)
+    ax3.set_title("Correlation Heatmap")
+    st.pyplot(fig3)
+
+    # Panel 5: Trend Detection
+    st.header("📉 Panel 5: Trend Detection with Kendall Tests")
+    freq_choice = st.radio("Select data frequency:", ["Monthly", "Daily"])
+    trend_param = st.selectbox("Select variable for trend analysis", df.columns[1:], key="trend")
+
+    data_series = df[trend_param].dropna()
+    if freq_choice == "Monthly":
+        result = mk.seasonal_test(data_series, period=12)
+    else:
+        result = mk.hamed_rao_modification_test(data_series)
+
+    # Auto-generated insight
+    insight = f"The variable **{trend_param}** shows a **{result.trend.lower()} trend**"
+    if result.h:
+        insight += f" that is **statistically significant** (p = {result.p:.4f})."
+    else:
+        insight += f", but it is **not statistically significant** (p = {result.p:.4f})."
+    insight += f" The estimated rate of change is **{result.slope:.4f}** per time unit."
+
+    st.markdown(insight)
+
+    # Generate trend chart
+    fig4, ax4 = plt.subplots()
+    x = np.arange(len(df))
+    y = df[trend_param].values
+    ax4.plot(df["Date"], y, label="Anomaly", color="blue")
+    slope, intercept = np.polyfit(x, y, 1)
+    ax4.plot(df["Date"], slope * x + intercept, linestyle="--", color="red", label="Trend")
+    ax4.set_title(f"{trend_param} Trend")
+    ax4.set_ylabel(trend_param)
+    ax4.legend()
+    st.pyplot(fig4)
+
+    # Save charts to buffers
+    def save_chart(fig):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png")
+        buf.seek(0)
+        return buf
+
+    chart_buffers = {
+        "Time Series": save_chart(fig4),
+        "Histogram": save_chart(fig2),
+        "Boxplot": save_chart(fig1)
+    }
+
+    # Create PDF
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Climate Anomaly Trend Report", ln=True)
+
+    pdf.set_font("Arial", "", 12)
+    pdf.multi_cell(0, 10, f"""
+Variable: {trend_param}
+Season: {season_choice}
+Years: {year_range[0]} – {year_range[1]}
+Test: {'Seasonal Kendall' if freq_choice == 'Monthly' else 'Mann-Kendall (Hamed-Rao)'}
+Trend: {result.trend}
+Significant: {'Yes' if result.h else 'No'}
+p-value: {result.p:.4f}
+Z-score: {result.z:.2f}
+Slope: {result.slope:.4f}
+""")
+
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, "Insight", ln=True)
+    pdf.set_font("Arial", "", 12)
+    pdf.multi_cell(0, 10, insight)
+
+    for title, buf in chart_buffers.items():
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, title, ln=True)
+        pdf.image(buf, x=10, y=30, w=180)
+
+    # Export PDF
+    pdf_buffer = io.BytesIO()
+    pdf.output(pdf_buffer)
+    pdf_buffer.seek(0)
+
+    st.download_button(
+        label="📄 Download Full Report (PDF)",
+        data=pdf_buffer,
+        file_name=f"{trend_param}_trend_report.pdf",
+        mime="application/pdf"
+    )
+
+else:
+    st.warning("👆 Please upload a dataset to begin.")
