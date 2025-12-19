@@ -89,11 +89,11 @@ if not available_time_cols:
 # Let user choose which time column to use
 selected_time_col = st.selectbox("🕒 Select a time column to use", available_time_cols)
     
-   if selected_time_col == "Date":
-   try:
+    if selected_time_col == "Date":
+    try:
         df["Parsed Date"] = pd.to_datetime(df["Date"], format="%Y-%m")
         st.success("✅ Detected format: YYYY-MM.")
-   except:
+    except:
         try:
             df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"].astype(str), format="%Y-%m-%d")
             st.success("✅ Detected format: MM-DD (assumed year 2022).")
