@@ -6,9 +6,57 @@ import seaborn as sns
 import pymannkendall as mk
 from fpdf import FPDF
 import io
+from PIL import Image
 
-st.set_page_config(page_title="Climate Anomaly Dashboard", layout="wide")
-st.title("🌍 Climate Anomaly Dashboard")
+st.set_page_config(
+    page_title="Climate Anomaly Dashboard",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- Custom Background Styling ---
+def set_background():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-image: url("https://stock.adobe.com/in/images/global-warming-vs-climate-change-planet-earth-ecology-concept-global-warming-concept-the-effect-of-environment-climate-change/573969248");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+        .title-text {
+            font-size: 3rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 2px 2px 4px #000000;
+        }
+        .subtitle-text {
+            font-size: 1.3rem;
+            color: #f0f0f0;
+            text-shadow: 1px 1px 2px #000000;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+set_background()
+
+# --- Header Section ---
+col1, col2 = st.columns([1, 4])
+with col1:
+    try:
+        logo = Image.open("Logo App.jpeg")
+        st.image(logo, width=100)
+    except:
+        st.write("")  # Skip logo if not found
+with col2:
+    st.markdown('<div class="title-text">🌦️ Climate Anomaly Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle-text">Visualize seasonal trends, detect anomalies, and generate insights from climate data.</div>', unsafe_allow_html=True)
+
+st.markdown("---")
 
 uploaded_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"])
 
@@ -22,27 +70,34 @@ if uploaded_file:
         st.error("❌ The uploaded file must contain a 'Date' column.")
         st.stop()
 
-    # Try parsing YYYY-MM
     try:
+        # Try YYYY-MM format
         df["Parsed Date"] = pd.to_datetime(df["Date"], format="%Y-%m")
         st.success("✅ Detected monthly format (YYYY-MM).")
     except:
         try:
-            # Try parsing MM-DD with assumed year
-            df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"], format="%Y-%m-%d")
+            # Try MM-DD format (assume year 2022)
+            df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"].astype(str), format="%Y-%m-%d")
             st.success("✅ Detected daily format (MM-DD). Assumed year: 2022.")
         except:
             try:
-                # Try parsing month only (e.g., 1, 2, ..., 12)
-                df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"].astype(str) + "-01", format="%Y-%m-%d")
-                st.success("✅ Detected month-only format (1–12). Assumed year: 2022.")
+                # Try numeric month only (1–12)
+                df["Month"] = df["Date"].astype(int)
+                df["Parsed Date"] = pd.to_datetime(df["Month"], format="%m")
+                st.success("✅ Detected numeric month format (1–12). No year assumed.")
             except:
                 st.error("❌ Could not parse 'Date'. Use one of: YYYY-MM, MM-DD, or numeric month (1–12).")
                 st.stop()
 
+    # Add derived columns
+    df["Month"] = df["Parsed Date"].dt.month
+    df["Months"] = df["Parsed Date"].dt.strftime("%B")
+    df["DayOfYear"] = df["Parsed Date"].dt.dayofyear
+
     # Extract month and year
     df["Month"] = df["Parsed Date"].dt.month
     df["Year"] = df["Parsed Date"].dt.year
+
     # Year filter
     min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
     year_range = st.slider("📅 Select year range", min_value=min_year, max_value=max_year, value=(min_year, max_year))
