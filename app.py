@@ -88,8 +88,8 @@ if not available_time_cols:
 
 # Let user choose which time column to use
 selected_time_col = st.selectbox("🕒 Select a time column to use", available_time_cols)
-    
-    if selected_time_col == "Date":
+  
+if selected_time_col == "Date":
     try:
         df["Parsed Date"] = pd.to_datetime(df["Date"], format="%Y-%m")
         st.success("✅ Detected format: YYYY-MM.")
@@ -122,8 +122,8 @@ elif selected_time_col == "DayOfYear":
     df["DayOfYear"] = df["DayOfYear"].astype(int)
     df["Parsed Date"] = pd.to_datetime("2022-01-01") + pd.to_timedelta(df["DayOfYear"] - 1, unit="D")
     df["Month"] = df["Parsed Date"].dt.month
-    df["Months"] = df["Parsed Date"].dt.strftime("%B")
-
+    df["Months"] = df["Parsed Date"].dt.strftime("%B")  
+    
     # Extract month and year
     df["Month"] = df["Parsed Date"].dt.month
     df["Year"] = df["Parsed Date"].dt.year
