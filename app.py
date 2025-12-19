@@ -60,39 +60,69 @@ st.markdown("---")
 
 uploaded_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"])
 
+uploaded_file = st.file_uploader("📤 Upload your climate data file (.csv or .xlsx)", type=["csv", "xlsx"])
+
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
+        st.success("✅ CSV file loaded successfully.")
     else:
-        df = pd.read_excel(uploaded_file)
+        # Load all sheet names
+        xls = pd.ExcelFile(uploaded_file)
+        sheet_names = xls.sheet_names
 
-    if "Date" not in df.columns:
-        st.error("❌ The uploaded file must contain a 'Date' column.")
-        st.stop()
+        # Let user select a sheet
+        selected_sheet = st.selectbox("📄 Select a sheet to load", sheet_names)
 
+        # Load the selected sheet
+        df = pd.read_excel(xls, sheet_name=selected_sheet)
+        st.success(f"✅ Loaded sheet: {selected_sheet}")
+
+# Acceptable time reference columns
+time_columns = ["Date", "Months", "DayOfYear"]
+available_time_cols = [col for col in time_columns if col in df.columns]
+
+if not available_time_cols:
+    st.error("❌ Your file must contain at least one of these columns: 'Date', 'Months', or 'DayOfYear'.")
+    st.stop()
+
+# Let user choose which time column to use
+selected_time_col = st.selectbox("🕒 Select a time column to use", available_time_cols)
+    
+    if selected_time_col == "Date":
     try:
-        # Try YYYY-MM format
         df["Parsed Date"] = pd.to_datetime(df["Date"], format="%Y-%m")
-        st.success("✅ Detected monthly format (YYYY-MM).")
+        st.success("✅ Detected format: YYYY-MM.")
     except:
         try:
-            # Try MM-DD format (assume year 2022)
             df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"].astype(str), format="%Y-%m-%d")
-            st.success("✅ Detected daily format (MM-DD). Assumed year: 2022.")
+            st.success("✅ Detected format: MM-DD (assumed year 2022).")
         except:
             try:
-                # Try numeric month only (1–12)
-                df["Month"] = df["Date"].astype(int)
-                df["Parsed Date"] = pd.to_datetime(df["Month"], format="%m")
-                st.success("✅ Detected numeric month format (1–12). No year assumed.")
+                df["Parsed Date"] = pd.to_datetime(df["Date"].astype(int), format="%m")
+                st.success("✅ Detected numeric month format (1–12).")
             except:
-                st.error("❌ Could not parse 'Date'. Use one of: YYYY-MM, MM-DD, or numeric month (1–12).")
+                st.error("❌ Could not parse 'Date'.")
                 st.stop()
-
-    # Add derived columns
     df["Month"] = df["Parsed Date"].dt.month
     df["Months"] = df["Parsed Date"].dt.strftime("%B")
     df["DayOfYear"] = df["Parsed Date"].dt.dayofyear
+
+elif selected_time_col == "Months":
+    month_map = {
+        "January": 1, "February": 2, "March": 3, "April": 4,
+        "May": 5, "June": 6, "July": 7, "August": 8,
+        "September": 9, "October": 10, "November": 11, "December": 12
+    }
+    df["Month"] = df["Months"].map(month_map)
+    df["Parsed Date"] = pd.to_datetime(df["Month"], format="%m")
+    df["DayOfYear"] = df["Parsed Date"].dt.dayofyear
+
+elif selected_time_col == "DayOfYear":
+    df["DayOfYear"] = df["DayOfYear"].astype(int)
+    df["Parsed Date"] = pd.to_datetime("2022-01-01") + pd.to_timedelta(df["DayOfYear"] - 1, unit="D")
+    df["Month"] = df["Parsed Date"].dt.month
+    df["Months"] = df["Parsed Date"].dt.strftime("%B")
 
     # Extract month and year
     df["Month"] = df["Parsed Date"].dt.month
