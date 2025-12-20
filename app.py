@@ -58,25 +58,34 @@ with col2:
 
 st.markdown("---")
 
-uploaded_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"])
+# Upload anomaly dataset
+anomaly_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"], key="anomaly")
 
-uploaded_file = st.file_uploader("📤 Upload your climate data file (.csv or .xlsx)", type=["csv", "xlsx"])
-
-if uploaded_file:
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-        st.success("✅ CSV file loaded successfully.")
+if anomaly_file:
+    if anomaly_file.name.endswith(".csv"):
+        df_anomaly = pd.read_csv(anomaly_file)
+        st.success("✅ Anomaly CSV file loaded.")
     else:
-        # Load all sheet names
-        xls = pd.ExcelFile(uploaded_file)
-        sheet_names = xls.sheet_names
+        xls_anomaly = pd.ExcelFile(anomaly_file)
+        sheet_names_anomaly = xls_anomaly.sheet_names
+        selected_anomaly_sheet = st.selectbox("📄 Select a sheet from anomaly file", sheet_names_anomaly)
+        df_anomaly = pd.read_excel(xls_anomaly, sheet_name=selected_anomaly_sheet)
+        st.success(f"✅ Loaded anomaly sheet: {selected_anomaly_sheet}")
 
-        # Let user select a sheet
-        selected_sheet = st.selectbox("📄 Select a sheet to load", sheet_names)
+# Upload climate dataset
+climate_file = st.file_uploader("📤 Upload your climate data file (.csv or .xlsx)", type=["csv", "xlsx"], key="climate")
 
-        # Load the selected sheet
-        df = pd.read_excel(xls, sheet_name=selected_sheet)
-        st.success(f"✅ Loaded sheet: {selected_sheet}")
+if climate_file:
+    if climate_file.name.endswith(".csv"):
+        df_climate = pd.read_csv(climate_file)
+        st.success("✅ Climate CSV file loaded.")
+    else:
+        xls_climate = pd.ExcelFile(climate_file)
+        sheet_names_climate = xls_climate.sheet_names
+        selected_climate_sheet = st.selectbox("📄 Select a sheet from climate file", sheet_names_climate)
+        df_climate = pd.read_excel(xls_climate, sheet_name=selected_climate_sheet)
+        st.success(f"✅ Loaded climate sheet: {selected_climate_sheet}")
+
 
 # Acceptable time reference columns
 time_columns = ["Date", "Months", "DayOfYear"]
