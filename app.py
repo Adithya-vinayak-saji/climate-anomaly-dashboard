@@ -4,271 +4,194 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pymannkendall as mk
-from fpdf import FPDF
 import io
 from PIL import Image
 
+# --- Page Config ---
 st.set_page_config(
     page_title="Climate Anomaly Dashboard",
     page_icon="🌍",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# --- Custom Background Styling ---
-def set_background():
+# --- High-Contrast Dark Mode Styling ---
+def set_styling():
     st.markdown(
         """
         <style>
+        /* 1. Main Dashboard Background */
         .stApp {
-            background-image: url("https://stock.adobe.com/in/images/global-warming-vs-climate-change-planet-earth-ecology-concept-global-warming-concept-the-effect-of-environment-climate-change/573969248");
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
+            background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+            color: #ffffff;
         }
+
+        /* 2. Sidebar styling: Dark with Cyan border */
+        [data-testid="stSidebar"] {
+            background-color: #1a1a2e !important;
+            border-right: 2px solid #00d2ff;
+        }
+
+        /* 3. FIX: Force ALL Sidebar text and labels to White */
+        [data-testid="stSidebar"] label, 
+        [data-testid="stSidebar"] .stMarkdown p, 
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] div {
+            color: #ffffff !important;
+            font-weight: 500 !important;
+        }
+
+        /* 4. FIX: Remove the white area from the File Uploader Box */
+        [data-testid="stFileUploadDropzone"] {
+            background-color: rgba(255, 255, 255, 0.05) !important;
+            border: 2px dashed #00d2ff !important;
+            color: #ffffff !important;
+        }
+        
+        /* 5. FIX: Browse Files Button visibility (Bright Cyan with Dark Text) */
+        button[kind="secondary"] {
+            color: #1a1a2e !important;
+            background-color: #00d2ff !important;
+            border: 2px solid #00d2ff !important;
+            font-weight: bold !important;
+        }
+        
+        button[kind="secondary"]:hover {
+            background-color: #ffffff !important;
+            color: #1a1a2e !important;
+        }
+
+        /* Header Styling */
         .title-text {
             font-size: 3rem;
-            font-weight: 700;
-            color: white;
-            text-shadow: 2px 2px 4px #000000;
+            font-weight: 800;
+            color: #00d2ff;
+            text-shadow: 2px 2px 10px rgba(0,0,0,0.5);
         }
-        .subtitle-text {
-            font-size: 1.3rem;
-            color: #f0f0f0;
-            text-shadow: 1px 1px 2px #000000;
-        }
+        hr { border: 0.5px solid #00d2ff; }
         </style>
         """,
         unsafe_allow_html=True
     )
 
-set_background()
+set_styling()
 
-# --- Header Section ---
-col1, col2 = st.columns([1, 4])
-with col1:
-    try:
-        logo = Image.open("Logo App.jpeg")
-        st.image(logo, width=100)
-    except:
-        st.write("")  # Skip logo if not found
-with col2:
-    st.markdown('<div class="title-text">🌦️ Climate Anomaly Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle-text">Visualize seasonal trends, detect anomalies, and generate insights from climate data.</div>', unsafe_allow_html=True)
-
+# --- Header ---
+st.markdown('<div class="title-text">🌍 Climate Anomaly Dashboard</div>', unsafe_allow_html=True)
+st.markdown("Analyze seasonal trends and inspect specific extreme weather anomalies.")
 st.markdown("---")
 
-# Upload anomaly dataset
-anomaly_file = st.file_uploader("📁 Upload your anomaly dataset (CSV or Excel)", type=["csv", "xlsx"], key="anomaly")
+# --- Sidebar: Data Management ---
+st.sidebar.markdown("### 📂 Data Management")
+dataset_type = st.sidebar.radio("Dataset Category", ["Climate Data", "Anomaly Data"], key="ds_type")
+uploaded_file = st.sidebar.file_uploader(f"Upload {dataset_type}", type=["csv", "xlsx"])
 
-if anomaly_file:
-    if anomaly_file.name.endswith(".csv"):
-        df_anomaly = pd.read_csv(anomaly_file)
-        st.success("✅ Anomaly CSV file loaded.")
+df = None
+
+if uploaded_file:
+    # Handle Excel Sheets
+    if uploaded_file.name.endswith(".xlsx"):
+        excel_file = pd.ExcelFile(uploaded_file)
+        sheet_names = excel_file.sheet_names
+        selected_sheet = st.sidebar.selectbox("📄 Select a Sheet", sheet_names)
+        df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
     else:
-        xls_anomaly = pd.ExcelFile(anomaly_file)
-        sheet_names_anomaly = xls_anomaly.sheet_names
-        selected_anomaly_sheet = st.selectbox("📄 Select a sheet from anomaly file", sheet_names_anomaly)
-        df_anomaly = pd.read_excel(xls_anomaly, sheet_name=selected_anomaly_sheet)
-        st.success(f"✅ Loaded anomaly sheet: {selected_anomaly_sheet}")
+        df = pd.read_csv(uploaded_file)
 
-# Upload climate dataset
-climate_file = st.file_uploader("📤 Upload your climate data file (.csv or .xlsx)", type=["csv", "xlsx"], key="climate")
-
-if climate_file:
-    if climate_file.name.endswith(".csv"):
-        df_climate = pd.read_csv(climate_file)
-        st.success("✅ Climate CSV file loaded.")
-    else:
-        xls_climate = pd.ExcelFile(climate_file)
-        sheet_names_climate = xls_climate.sheet_names
-        selected_climate_sheet = st.selectbox("📄 Select a sheet from climate file", sheet_names_climate)
-        df_climate = pd.read_excel(xls_climate, sheet_name=selected_climate_sheet)
-        st.success(f"✅ Loaded climate sheet: {selected_climate_sheet}")
-
-
-# Acceptable time reference columns
-time_columns = ["Date", "Months", "DayOfYear"]
-available_time_cols = [col for col in time_columns if col in df.columns]
-
-if not available_time_cols:
-    st.error("❌ Your file must contain at least one of these columns: 'Date', 'Months', or 'DayOfYear'.")
-    st.stop()
-
-# Let user choose which time column to use
-selected_time_col = st.selectbox("🕒 Select a time column to use", available_time_cols)
-  
-if selected_time_col == "Date":
-    try:
-        df["Parsed Date"] = pd.to_datetime(df["Date"], format="%Y-%m")
-        st.success("✅ Detected format: YYYY-MM.")
-    except:
-        try:
-            df["Parsed Date"] = pd.to_datetime("2022-" + df["Date"].astype(str), format="%Y-%m-%d")
-            st.success("✅ Detected format: MM-DD (assumed year 2022).")
-        except:
-            try:
-                df["Parsed Date"] = pd.to_datetime(df["Date"].astype(int), format="%m")
-                st.success("✅ Detected numeric month format (1–12).")
-            except:
-                st.error("❌ Could not parse 'Date'.")
-                st.stop()
-    df["Month"] = df["Parsed Date"].dt.month
-    df["Months"] = df["Parsed Date"].dt.strftime("%B")
-    df["DayOfYear"] = df["Parsed Date"].dt.dayofyear
-
-elif selected_time_col == "Months":
-    month_map = {
-        "January": 1, "February": 2, "March": 3, "April": 4,
-        "May": 5, "June": 6, "July": 7, "August": 8,
-        "September": 9, "October": 10, "November": 11, "December": 12
-    }
-    df["Month"] = df["Months"].map(month_map)
-    df["Parsed Date"] = pd.to_datetime(df["Month"], format="%m")
-    df["DayOfYear"] = df["Parsed Date"].dt.dayofyear
-
-elif selected_time_col == "DayOfYear":
-    df["DayOfYear"] = df["DayOfYear"].astype(int)
-    df["Parsed Date"] = pd.to_datetime("2022-01-01") + pd.to_timedelta(df["DayOfYear"] - 1, unit="D")
-    df["Month"] = df["Parsed Date"].dt.month
-    df["Months"] = df["Parsed Date"].dt.strftime("%B")  
+# --- Analysis Logic ---
+if df is not None:
+    # 1. Flexible Column Detection
+    cols_lower = [c.lower() for c in df.columns]
+    target_col = None
     
-    # Extract month and year
-    df["Month"] = df["Parsed Date"].dt.month
+    if "date" in cols_lower:
+        target_col = df.columns[cols_lower.index("date")]
+        df["Parsed Date"] = pd.to_datetime(df[target_col], errors="coerce")
+    elif "months" in cols_lower:
+        target_col = df.columns[cols_lower.index("months")]
+        df["Parsed Date"] = pd.to_datetime(df[target_col], format="%B", errors="coerce")
+    elif "dayofyear" in cols_lower:
+        target_col = df.columns[cols_lower.index("dayofyear")]
+        df["Parsed Date"] = pd.to_datetime(df[target_col], format="%j", errors="coerce")
+
+    if "Parsed Date" not in df.columns or df["Parsed Date"].isnull().all():
+        st.error("❌ Valid time column not detected in this sheet.")
+        st.info(f"Detected Columns: {list(df.columns)}")
+        st.stop()
+
+    # Clean data and Extract features
+    df = df.dropna(subset=["Parsed Date"])
     df["Year"] = df["Parsed Date"].dt.year
+    df["Month"] = df["Parsed Date"].dt.month
 
-    # Year filter
-    min_year, max_year = int(df["Year"].min()), int(df["Year"].max())
-    year_range = st.slider("📅 Select year range", min_value=min_year, max_value=max_year, value=(min_year, max_year))
-    df = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])]
+    # 2. Sidebar Filters
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🛠️ Filters")
+    
+    available_years = sorted(df["Year"].unique().astype(int))
+    
+    # Check session state for persistence
+    if "yr_range" not in st.session_state:
+        st.session_state.yr_range = (min(available_years), max(available_years))
 
-    # Season filter
+    if st.sidebar.button("🔄 Reset Filters"):
+        st.session_state.yr_range = (min(available_years), max(available_years))
+        st.session_state.sn_choice = "All"
+        st.rerun()
+
+    year_filter = st.sidebar.slider("Year Range", min(available_years), max(available_years), 
+                                    st.session_state.yr_range, key="yr_range")
+
     season_map = {
-        "Winter (Dec-Feb)": [12, 1, 2],
-        "Summer (Mar-May)": [3, 4, 5],
-        "Monsoon (Jun-Sep)": [6, 7, 8, 9],
-        "Post-Monsoon (Oct-Nov)": [10, 11]
+        "Winter (Dec-Feb)": [12, 1, 2], "Summer (Mar-May)": [3, 4, 5],
+        "Monsoon (Jun-Sep)": [6, 7, 8, 9], "Post-Monsoon (Oct-Nov)": [10, 11]
     }
-    season_choice = st.selectbox("🌦️ Select season (optional)", ["All"] + list(season_map.keys()))
+    season_choice = st.sidebar.selectbox("Season", ["All"] + list(season_map.keys()), key="sn_choice")
+
+    # Filter Application
+    f_df = df[(df["Year"] >= year_filter[0]) & (df["Year"] <= year_filter[1])].copy()
     if season_choice != "All":
-        df = df[df["Month"].isin(season_map[season_choice])]
+        f_df = f_df[f_df["Month"].isin(season_map[season_choice])]
 
-    # Panel 1: Time Series
-    st.header("📈 Panel 1: Time Series Plot")
-    selected_params = st.multiselect("Select variables to plot", df.columns[1:], default=df.columns[1])
-    if selected_params:
-        st.line_chart(df.set_index("Date")[selected_params])
+    # 3. Visualizations
+    numeric_cols = [c for c in f_df.select_dtypes(include=[np.number]).columns if c not in ["Year", "Month"]]
 
-    # Panel 2: Boxplot
-    st.header("📊 Panel 2: Boxplot")
-    box_param = st.selectbox("Select variable for boxplot", df.columns[1:])
-    fig1, ax1 = plt.subplots()
-    sns.boxplot(y=df[box_param], ax=ax1)
-    ax1.set_title(f"Boxplot of {box_param}")
-    st.pyplot(fig1)
+    if numeric_cols:
+        st.subheader("📈 Time Series & Anomaly Detection")
+        ts_var = st.selectbox("Select Climate Variable", numeric_cols)
+        
+        # Anomaly Logic: Mean +/- 2 Standard Deviations
+        mean_val = f_df[ts_var].mean()
+        std_val = f_df[ts_var].std()
+        f_df['is_anomaly'] = (f_df[ts_var] > mean_val + 2*std_val) | (f_df[ts_var] < mean_val - 2*std_val)
+        anomalies = f_df[f_df['is_anomaly'] == True]
 
-    # Panel 3: Histogram
-    st.header("📉 Panel 3: Histogram")
-    hist_param = st.selectbox("Select variable for histogram", df.columns[1:], key="hist")
-    fig2, ax2 = plt.subplots()
-    ax2.hist(df[hist_param].dropna(), bins=20, color="skyblue", edgecolor="black")
-    ax2.set_title(f"Histogram of {hist_param}")
-    st.pyplot(fig2)
+        fig_ts, ax_ts = plt.subplots(figsize=(12, 5), facecolor='#1e1e2f')
+        ax_ts.set_facecolor('#1e1e2f')
+        ax_ts.plot(f_df["Parsed Date"], f_df[ts_var], color="#00d2ff", label="Normal Data", alpha=0.7)
+        ax_ts.scatter(anomalies["Parsed Date"], anomalies[ts_var], color="#ff4b4b", label="Anomaly Detected", zorder=5)
+        
+        ax_ts.tick_params(colors='white')
+        ax_ts.legend(facecolor='#1e1e2f', labelcolor='white')
+        st.pyplot(fig_ts)
 
-    # Panel 4: Correlation Heatmap
-    st.header("🧊 Panel 4: Correlation Heatmap")
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
-    sns.heatmap(df.select_dtypes(include=[np.number]).corr(), annot=True, cmap="coolwarm", ax=ax3)
-    ax3.set_title("Correlation Heatmap")
-    st.pyplot(fig3)
+        # Summary Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Selected Average", f"{mean_val:.2f}")
+        m2.metric("Total Anomalies Found", len(anomalies))
+        m3.metric("Standard Deviation (σ)", f"{std_val:.2f}")
 
-    # Panel 5: Trend Detection
-    st.header("📉 Panel 5: Trend Detection with Kendall Tests")
-    freq_choice = st.radio("Select data frequency:", ["Monthly", "Daily"])
-    trend_param = st.selectbox("Select variable for trend analysis", df.columns[1:], key="trend")
+        # 4. New: Anomaly Data Preview
+        st.markdown("---")
+        st.subheader("🔍 Anomaly Data Preview")
+        if not anomalies.empty:
+            st.write(f"The following table shows data points exceeding the $\pm 2\sigma$ threshold for **{ts_var}**.")
+            # Displaying only relevant columns for the table
+            display_cols = ["Parsed Date", ts_var, "Year", "Month"]
+            st.dataframe(anomalies[display_cols].sort_values("Parsed Date"), use_container_width=True)
+        else:
+            st.info("No anomalies detected in the current filtered range.")
 
-    data_series = df[trend_param].dropna()
-    if freq_choice == "Monthly":
-        result = mk.seasonal_test(data_series, period=12)
     else:
-        result = mk.hamed_rao_modification_test(data_series)
-
-    # Auto-generated insight
-    insight = f"The variable **{trend_param}** shows a **{result.trend.lower()} trend**"
-    if result.h:
-        insight += f" that is **statistically significant** (p = {result.p:.4f})."
-    else:
-        insight += f", but it is **not statistically significant** (p = {result.p:.4f})."
-    insight += f" The estimated rate of change is **{result.slope:.4f}** per time unit."
-
-    st.markdown(insight)
-
-    # Generate trend chart
-    fig4, ax4 = plt.subplots()
-    x = np.arange(len(df))
-    y = df[trend_param].values
-    ax4.plot(df["Date"], y, label="Anomaly", color="blue")
-    slope, intercept = np.polyfit(x, y, 1)
-    ax4.plot(df["Date"], slope * x + intercept, linestyle="--", color="red", label="Trend")
-    ax4.set_title(f"{trend_param} Trend")
-    ax4.set_ylabel(trend_param)
-    ax4.legend()
-    st.pyplot(fig4)
-
-    # Save charts to buffers
-    def save_chart(fig):
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        buf.seek(0)
-        return buf
-
-    chart_buffers = {
-        "Time Series": save_chart(fig4),
-        "Histogram": save_chart(fig2),
-        "Boxplot": save_chart(fig1)
-    }
-
-    # Create PDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Climate Anomaly Trend Report", ln=True)
-
-    pdf.set_font("Arial", "", 12)
-    pdf.multi_cell(0, 10, f"""
-Variable: {trend_param}
-Season: {season_choice}
-Years: {year_range[0]} – {year_range[1]}
-Test: {'Seasonal Kendall' if freq_choice == 'Monthly' else 'Mann-Kendall (Hamed-Rao)'}
-Trend: {result.trend}
-Significant: {'Yes' if result.h else 'No'}
-p-value: {result.p:.4f}
-Z-score: {result.z:.2f}
-Slope: {result.slope:.4f}
-""")
-
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "Insight", ln=True)
-    pdf.set_font("Arial", "", 12)
-    pdf.multi_cell(0, 10, insight)
-
-    for title, buf in chart_buffers.items():
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, title, ln=True)
-        pdf.image(buf, x=10, y=30, w=180)
-
-    # Export PDF
-    pdf_buffer = io.BytesIO()
-    pdf.output(pdf_buffer)
-    pdf_buffer.seek(0)
-
-    st.download_button(
-        label="📄 Download Full Report (PDF)",
-        data=pdf_buffer,
-        file_name=f"{trend_param}_trend_report.pdf",
-        mime="application/pdf"
-    )
-
+        st.warning("No numeric columns available in the selected sheet.")
 else:
-    st.warning("👆 Please upload a dataset to begin.")
+    st.info("👋 Use the sidebar to upload a file and select a sheet.")
