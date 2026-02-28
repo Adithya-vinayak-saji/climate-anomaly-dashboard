@@ -9,3 +9,4 @@ google-generativeai
 statsmodels
 scikit-learn
 openpyxl
+prophet
